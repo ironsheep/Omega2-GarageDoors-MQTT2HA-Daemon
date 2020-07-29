@@ -13,7 +13,7 @@ __pycache__/
 *.lst
 
 # ignore my config file
-config.ini
+config*.ini
 
 # Distribution / packaging
 .Python

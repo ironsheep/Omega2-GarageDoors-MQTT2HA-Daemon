@@ -22,6 +22,7 @@ from configparser import ConfigParser
 from unidecode import unidecode
 import paho.mqtt.client as mqtt
 from signal import signal, SIGPIPE, SIG_DFL
+
 signal(SIGPIPE,SIG_DFL)
 
 script_version = "1.2.2"
@@ -105,6 +106,12 @@ def on_publish(client, userdata, mid):
     #print_line('* Data successfully published.')
     pass
 
+def on_message(client, userdata, message):
+    print_line("message received {}".format(str(message.payload.decode("utf-8"))), debug=True)
+    print_line("message topic={}".format(message.topic), debug=True)
+    print_line("message qos={}".format(message.qos), debug=True)
+    print_line("message retain flag={}".format(message.retain), debug=True)
+
 # Load configuration file
 config = ConfigParser(delimiters=('=', ), inline_comment_prefixes=('#'))
 config.optionxform = str
@@ -127,9 +134,9 @@ default_update_flag_filespec = '/home/pi/bin/lastupd.date'
 update_flag_filespec = config['Daemon'].get('update_flag_filespec', default_update_flag_filespec)
 
 default_base_topic = 'home/nodes'
-default_sensor_name = 'rpi-reporter'
+default_sensor_name = 'garage-doors'
 
-base_topic = config['MQTT'].get('base_topic', default_base_topic).lower()
+base_topic_root = config['MQTT'].get('base_topic', default_base_topic).lower()
 sensor_name = config['MQTT'].get('sensor_name', default_sensor_name).lower()
 
 # report our RPi values every 5min 
@@ -173,6 +180,9 @@ dvc_system_temp = ''
 dvc_mqtt_script = script_info
 dvc_interfaces = []
 dvc_firmware_version = ''
+
+dvc_switch_left_state = False    # T/F where T means ON
+dvc_switch_right_state = False    # T/F where T means ON
 
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
@@ -238,12 +248,12 @@ def getHostnames():
     global dvc_hostname
     global dvc_fqdn
     #  BUG?! our Omega2 doesn't know our domain name so we append it
-    out = subprocess.Popen("/bin/cat /etc/config/system | /bin/grep host | /usr/bin/awk '{ print  }' | /usr/bin/tr -d \'", 
+    out = subprocess.Popen("/bin/cat /etc/config/system | /bin/grep host | /usr/bin/awk '{ print $3 }'", 
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
     stdout,stderr = out.communicate()
-    dvc_hostname = stdout.decode('utf-8').rstrip()
+    dvc_hostname = stdout.decode('utf-8').rstrip().replace("'", '')
     print_line('dvc_hostname=[{}]'.format(dvc_hostname), debug=True)
     if len(fallback_domain) > 0:
         dvc_fqdn = '{}.{}'.format(dvc_hostname, fallback_domain)
@@ -285,7 +295,7 @@ def getNetworkIFs():    # RERUN in loop
         trimmedLine = currLine.lstrip().rstrip()
         trimmedLines.append(trimmedLine)
 
-    print_line('trimmedLines=[{}]'.format(trimmedLines), debug=True)
+    #print_line('trimmedLines=[{}]'.format(trimmedLines), debug=True)
     #
     # OLDER SYSTEMS
     #  eth0      Link encap:Ethernet  HWaddr b8:27:eb:c8:81:f2  
@@ -304,8 +314,8 @@ def getNetworkIFs():    # RERUN in loop
     imterfc = ''
     for currLine in trimmedLines:
         lineParts = currLine.split()
-        print_line('- currLine=[{}]'.format(currLine), debug=True)
-        print_line('- lineParts=[{}]'.format(lineParts), debug=True)
+        #print_line('- currLine=[{}]'.format(currLine), debug=True)
+        #print_line('- lineParts=[{}]'.format(lineParts), debug=True)
         if len(lineParts) > 0:
             if 'flags' in currLine:  # NEWER ONLY
                 haveIF = True
@@ -317,7 +327,7 @@ def getNetworkIFs():    # RERUN in loop
                 newTuple = (imterfc, 'mac', lineParts[4])
                 if dvc_mac_raw == '':
                     dvc_mac_raw = lineParts[4]
-                print_line('newIF=[{}]'.format(imterfc), debug=True)
+                #print_line('newIF=[{}]'.format(imterfc), debug=True)
                 tmpInterfaces.append(newTuple)
                 print_line('newTuple=[{}]'.format(newTuple), debug=True)
             elif haveIF == True:
@@ -381,8 +391,6 @@ def getLastUpdateDate():    # RERUN in loop
 getDeviceModel()
 getFirmwareVersion()
 getHostnames()
-if(sensor_name == default_sensor_name):
-    sensor_name = 'omega2-{}'.format(dvc_hostname)
 # get model so we can use it too in MQTT
 getLastUpdateDate()
 getLinuxRelease()
@@ -437,14 +445,26 @@ aliveTimerRunningStatus = False
 # -----------------------------------------------------------------------------
 
 # MQTT connection
-lwt_topic = '{}/sensor/{}/status'.format(base_topic, sensor_name.lower())
+base_topic = '{}/switch/{}'.format(base_topic_root, sensor_name.lower())
+lwt_topic = '{}/status'.format(base_topic, sensor_name.lower())
 lwt_online_val = 'online'
 lwt_offline_val = 'offline'
+
+door_name_left = 'left'
+door_name_right = 'right'
 
 print_line('Connecting to MQTT broker ...', verbose=True)
 mqtt_client = mqtt.Client()
 mqtt_client.on_connect = on_connect
 mqtt_client.on_publish = on_publish
+mqtt_client.on_message = on_message    
+
+command_topic_left = '{}/{}/set'.format(base_topic, door_name_left)
+mqtt_client.subscribe(command_topic_left)
+command_topic_right = '{}/{}/set'.format(base_topic, door_name_right)
+mqtt_client.subscribe(command_topic_right)
+status_topic_left = '{}/{}/status'.format(base_topic, door_name_left)
+status_topic_right = '{}/{}/status'.format(base_topic, door_name_right)
 
 mqtt_client.will_set(lwt_topic, payload=lwt_offline_val, retain=True)
 
@@ -504,15 +524,10 @@ detectorValues = OrderedDict([
 
 print_line('Announcing Omega2 Monitoring device to MQTT broker for auto-discovery ...')
 
-base_topic = '{}/sensor/{}'.format(base_topic, sensor_name.lower())
-
 activity_topic = '{}/status'.format(base_topic)    # vs. LWT
-
 command_topic_rel = '~/set'
 
 for [sensor, params] in detectorValues.items():
-    values_topic_rel = '{}/{}'.format('~', sensor)
-    values_topic = '{}/{}'.format(base_topic, sensor) 
     if 'subtopic' in params:
         activity_topic_rel = '~/{}/status'.format(params['subtopic'])     # vs. LWT
         command_topic_rel = '~/{}/set'.format(params['subtopic'])
@@ -607,6 +622,10 @@ OMEGA_NET_CONFIG = "network"
 OMEGA_SCRIPT = "script"
 SCRIPT_REPORT_INTERVAL = "report_interval"
 
+SW_STATUS = "status"
+SW_VALUE_ON = "ON"
+SW_VALUE_OFF = "OFF"
+
 def send_status(timestamp, nothing):
 
     omegaData = OrderedDict()
@@ -627,7 +646,23 @@ def send_status(timestamp, nothing):
     rpiTopDict = OrderedDict()
     rpiTopDict[LDS_PAYLOAD_NAME] = omegaData
 
-    _thread.start_new_thread(publishMonitorData, (rpiTopDict, values_topic))
+    _thread.start_new_thread(publishMonitorData, (rpiTopDict, status_topic_right))
+
+def send_sw_status(timestamp, topic):
+    omegaData = OrderedDict()
+
+    if 'left' in topic:
+        switch_value =  dvc_switch_left_state
+    else:
+        switch_value =  dvc_switch_right_state
+
+    switch_value_string = SW_VALUE_ON
+    if switch_value == False:
+        switch_value_string = SW_VALUE_OFF
+
+    omegaData[SW_STATUS] = switch_value_string
+
+    _thread.start_new_thread(publishSwitchValue, (omegaData, topic))
 
 def getNetworkDictionary():
     global dvc_interfaces
@@ -663,6 +698,10 @@ def publishMonitorData(latestData, topic):
     mqtt_client.publish('{}'.format(topic), json.dumps(latestData), 1, retain=False)
     sleep(0.5) # some slack for the publish roundtrip and callback function  
 
+def publishSwitchValue(latestData, topic):
+    print_line('Publishing to MQTT topic "{}, Data:{}"'.format(topic, json.dumps(latestData)))
+    mqtt_client.publish('{}'.format(topic), json.dumps(latestData), 1, retain=False)
+    sleep(0.5) # some slack for the publish roundtrip and callback function  
 
 def update_values():
     # nothing here yet
@@ -687,7 +726,8 @@ def handle_interrupt(channel):
 
     if (opt_stall == False or reported_first_time == False and opt_stall == True):
         # ok, report our new detection to MQTT
-        _thread.start_new_thread(send_status, (current_timestamp, ''))
+        _thread.start_new_thread(send_sw_status, (current_timestamp, status_topic_left))
+        _thread.start_new_thread(send_sw_status, (current_timestamp, status_topic_right))
         reported_first_time = True
     else:
         print_line(sourceID + " >> Time to report! (%s) but SKIPPED (TEST: stall)" % current_timestamp.strftime('%H:%M:%S - %Y/%m/%d'), verbose=True)

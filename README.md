@@ -3,9 +3,9 @@
 ![Project Maintenance][maintenance-shield]
 
 
-A simple Python script to query the Raspberry Pi on which it is running for various configuration and status values which it then reports via via [MQTT](https://projects.eclipse.org/projects/iot.mosquitto) to your [Home Assistant](https://www.home-assistant.io/) installation. 
+A simple Python script which is an MQTT sender/listener providing twin switches (left and right garage doors)  via [MQTT](https://projects.eclipse.org/projects/iot.mosquitto) to your [Home Assistant](https://www.home-assistant.io/) installation. 
 
-This script can alse be configured to be run in **daemon mode** continously in the background as a systemd service (or optionally as a script run from cron(1m)).
+This script should be configured to be run in **daemon mode** continously in the background as a systemd service.
 
 
 ## Features
@@ -20,18 +20,18 @@ This script can alse be configured to be run in **daemon mode** continously in t
 
 ### Omega Device
 
-Each Omega device is reported as:
+The Omega2 Garage Door device is reported as:
 
 | Name            | Description |
 |-----------------|-------------|
 | `Manufacturer`   | Onion Corporation |
 | `Model`         | Omega2+  |
-| `Name`      | (GarageDoor Controller |
+| `Name`      | GarageDoor Controller |
 | `sofware ver`  | Name, Version (e.g., 0.3.2 b233) |
 
 ### Omega MQTT Topics
 
-Each Omega device is reported as a single topic:
+The Omega2 Garage Door device exposes a number of topics:
 
 | Name            | Device Class | Units | Description
 |-----------------|-------------|-------------|-------------|
@@ -47,11 +47,11 @@ MQTT is huge help in connecting different parts of your smart home and setting u
 
 ## Installation
 
-On a modern Linux system just a few steps are needed to get the daemon working.
-The following example shows the installation under Debian/Raspbian below the `/opt` directory:
+On the OpenWrt system just a few steps are needed to get the daemon working.
+The following example shows the installation on OpenWrt below the `/opt` directory:
 
 ```shell
-opkg install git python3 python3-pip
+opkg install python3 python3-pip
 
 # fixme... this is not correct...
 sudo git clone https://github.com/ironsheep/RPi-Reporter-MQTT2HA-Daemon.git /opt/RPi-Reporter-MQTT2HA-Daemon
