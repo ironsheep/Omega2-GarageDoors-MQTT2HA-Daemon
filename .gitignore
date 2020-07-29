@@ -6,6 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
+# ignore finder files
+.DS_Store
+
+# ignore random list files
+*.lst
+
+# ignore my config file
+config.ini
+
 # Distribution / packaging
 .Python
 build/
