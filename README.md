@@ -5,12 +5,18 @@
 
 A simple Python script which is an MQTT sender/listener providing twin switches (left and right garage doors)  via [MQTT](https://projects.eclipse.org/projects/iot.mosquitto) to your [Home Assistant](https://www.home-assistant.io/) installation. 
 
-This script should be configured to be run in **daemon mode** continously in the background as a systemd service.
+This script should be configured to be run in **daemon mode** continously in the background as a System-V init script.
+
+# Project Hardware
+
+![Omega2+ and as seen in HA](./DOCs/images/HardwareDiscovery.png)
+
+This is the [onion Omega2+](https://onion.io/store/omega2p) mounted on an [Expansion Dock](https://onion.io/store/expansion-dock/) with the (dual) relay exapnsion *which they no longer sell* but can still be found in their [Maker Kit](https://docs.onion.io/omega2-maker-kit/)
 
 
-## Features
+## FeaturesDOCs
 
-* Tested on Omega2+ running lede/openWrt
+* Tested on Omega2+ running OpenWrt v4.14.81
 * Tested with Home Assistant v0.111.0
 * Tested with Mosquitto broker v5.1
 * Data is published via MQTT
@@ -18,7 +24,7 @@ This script should be configured to be run in **daemon mode** continously in the
 * MQTT authentication support
 * No special/root privileges are required by this mechanism
 
-### Omega Device
+### Omega2+ Device MQTT Discovery
 
 The Omega2 Garage Door device is reported as:
 
@@ -29,7 +35,7 @@ The Omega2 Garage Door device is reported as:
 | `Name`      | GarageDoor Controller |
 | `sofware ver`  | Name, Version (e.g., 0.3.2 b233) |
 
-### Omega MQTT Topics
+### Omega2+ MQTT Topics
 
 The Omega2 Garage Door device exposes a number of topics:
 
@@ -53,10 +59,10 @@ The following example shows the installation on OpenWrt below the `/opt` directo
 ```shell
 opkg install python3 python3-pip
 
-# fixme... this is not correct...
-sudo git clone https://github.com/ironsheep/RPi-Reporter-MQTT2HA-Daemon.git /opt/RPi-Reporter-MQTT2HA-Daemon
+*--> FIXME let's use download and unpack release instead of git clone <--*
+sudo git clone https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon.git /opt/Omega2-GarageDoors-MQTT2HA-Daemon
 
-cd /opt/RPi-Reporter-MQTT2HA-Daemon
+cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
 sudo pip3 install -r requirements.txt
 ```
 ## Configuration
@@ -65,8 +71,8 @@ To match personal needs, all operational details can be configured by modifying 
 The file needs to be created first:
 
 ```shell
-cp /opt/RPi-Reporter-MQTT2HA-Daemon/config.{ini.dist,ini}
-vim /opt/RPi-Reporter-MQTT2HA-Daemon/config.ini
+cp /opt/Omega2-GarageDoors-MQTT2HA-Daemon/config.{ini.dist,ini}
+vim /opt/Omega2-GarageDoors-MQTT2HA-Daemon/config.ini
 ```
 
 You will likely want to locate and configure the following (at a minimum) in your config.ini:
@@ -104,51 +110,26 @@ Using the command line argument `--config`, a directory where to read the config
 python3 /opt/Omega2-GarageDoors-MQTT2HA-Daemon/ISP-GarageDoor-mqtt-daemon.py --config /opt/Omega2-GarageDoors-MQTT2HA-Daemon
 ```
 
-### Choose Run Style
+### Configure to run script at startup
 
-You can choose to run this script as a system service or from cron(1m).
+You will want to run this script at startup as a System-V init script.
 
-- Choose as a system service if you want your HA to know if your RPi is up/down as when run from a service HA knows if you RPi is online or not and when it last reported in.
-
-- If, instead, you want the details of your RPi reported periodically to HA but don't care if it's up or down (or maybe you don't keep it up all the time) then run this script from cron(1m)
-
-Let's look at how to set up each of these forms: 
-
-#### Run as Daemon / Service
-
-In order to have your HA system know if your RPi is online/offline and when it last reported in then you are setting up this script to run as a system service by following these steps:
+Let's look at how to set set this up: 
 
 **NOTE:** Daemon mode must be enabled in the configuration file (default).
 
-By default the **isp-rpi-reporter.service** file indicates that the script should be run as user:group  **daemon:daemon**.  As this script requires access to the gpu you'll want to add access to them for the daemon user as follows:
-
-
-   ```shell   
-   # list current groups
-   groups daemon 
-   $ daemon : daemon
-
-   # add video if not present
-   sudo usermod daemon -a -G video
-   
-   # list current groups
-   groups daemon
-   $ daemon : daemon video
-   #                 ^^^^^ now it is present
-   ```
-
-Now that the 'daemon' user is configured to allow access the hardware you can setup the script to be run as a system service as follows:
 
    ```shell
-   sudo ln -s /opt/RPi-Reporter-MQTT2HA-Daemon/isp-rpi-reporter.service /etc/systemd/system/isp-rpi-reporter.service
+   ln -s /opt/Omega2-GarageDoors-MQTT2HA-Daemon/garage-daemon /etc/init.d/garage-daemon
 
-   sudo systemctl daemon-reload
-
-   sudo systemctl start isp-rpi-reporter.service
-   sudo systemctl status isp-rpi-reporter.service
-
-   # tell system that it can start our script at system startup during boot
-   sudo systemctl enable isp-rpi-reporter.service
+	# create the autostart links
+	update-rc.d /etc/init.d/garage-daemon defaults
+	
+	# start the service with your new version
+   /etc/init.d/garage-daemon start
+   
+   # if you want, check status of the running script
+   /etc/init.d/garage-daemon status
    ```
    
 **NOTE**: Raspian 'Jessie' does not fully support all of these systemctl commands
@@ -158,36 +139,25 @@ Now that the 'daemon' user is configured to allow access the hardware you can se
 **NOTE:** *Please remember to run the 'systemctl enable ...' once at first install, if you want your script to start up everytime your RPi reboots!*
 
    
-#### Run from Cron(1m)
-   
-In order to have the details of your RPi reported periodically to HA but not monitor your RPi for online/offline and when it reports in then we set up this script to run from cron(1m).
-
-With the cron setup you can run this script at intervals during a day, one a day/week and/or every time the RPi is powered on (booted.)
-
-   (-- tba --)
-   
 ### Update to latest
 
 Like most active developers, we periodically upgrade our script. You can update to the latest we've published by following these steps:
 
    ```shell
-   # go to local repo
-   cd /opt/RPi-Reporter-MQTT2HA-Daemon
-   
+   # go to local install location
+   cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
+      
    # stop the service
-   sudo systemctl stop isp-rpi-reporter.service
+   /etc/init.d/garage-daemon stop
    
    # get the latest version
-   sudo git pull
+   sudo git pull  *--> FIX ME this is NOT yet the desired for to use for update <--*
 
-	# reload the systemd configuration (in case it changed)
-   sudo systemctl daemon-reload
-
-	# restart the service with your new version
-   sudo systemctl start isp-rpi-reporter.service
+	# start the service with your new version
+   /etc/init.d/garage-daemon start
    
    # if you want, check status of the running script
-   systemctl status isp-rpi-reporter.service
+   /etc/init.d/garage-daemon status
 
    ```
 
@@ -197,75 +167,35 @@ Like most active developers, we periodically upgrade our script. You can update 
 
 When this script is running data will be published to the (configured) MQTT broker topic "`raspberrypi/{hostname}/...`" (e.g. `raspberrypi/picam01/...`).
 
-An example:
-
-```json
-{
-  "info": {
-    "timestamp": "2020-07-19T13:17:54-06:00",
-    "rpi_model": "RPi 3 Model B r1.2",
-    "ifaces": "e,w,b",
-    "host_name": "pi3plus",
-    "fqdn": "pi3plus.home",
-    "ux_release": "stretch",
-    "ux_version": "4.19.66-v7+",
-    "up_time": "13:17:54 up 14 days",
-    "last_update": "2020-07-18T00:51:36-06:00",
-    "fs_total_gb": 64,
-    "fs_free_prcnt": 10,
-    "networking": {
-      "eth0": {
-        "mac": "b8:27:eb:1a:f3:bc"
-      },
-      "wlan0": {
-        "IP": "192.168.100.189",
-        "mac": "b8:27:eb:4f:a6:e9"
-      }
-    },
-    "temperature_c": 55.3,
-    "reporter": "ISP-RPi-mqtt-daemon v0.8.5"
-  }
-}
-```
 
 **NOTE:** Where there's an IP address that interface is connected.
 
-This data can be subscribed to and processed by your home assistant installation. How you build your RPi dashboard from here is up to you!  
-
-## Lovelace Custom Card
-
-We have a Lovelace Custom Card that makes displaying this RPi Monitor data very easy.  
-
-See my project: [Lovelace RPi Monitor Card](https://github.com/ironsheep/lovelace-rpi-monitor-card)
-
-## Credits
-
-Thank you to Thomas Dietrich for providing a wonderful pattern for this project. His project, which I use and heartily recommend, is [miflora-mqtt-deamon](https://github.com/ThomDietrich/miflora-mqtt-daemon)
+This data can be subscribed to and processed by your home assistant installation. 
 
 ----
 
 
 ## Disclaimer and Legal
 
-> *Raspberry Pi* is registered trademark of *Raspberry Pi (Trading) Ltd.*
+> *Omega2+* is a product offered by *Onion Corporation*
 >
 > This project is a community project not for commercial use.
-> The authors will not be held responsible in the event of device failure or simply errant reporting of your RPi status.
+> The authors will not be held responsible in the event of device failure or simply errant reporting/control of your garage doors, doggie doors or whatever doors you choose to control with this script.
 >
-> This project is in no way affiliated with, authorized, maintained, sponsored or endorsed by *Raspberry Pi (Trading) Ltd.* or any of its affiliates or subsidiaries.
+> This project is in no way affiliated with, authorized, maintained, sponsored or endorsed by *Onion Corporation* or any of its affiliates or subsidiaries.
 
 ----
 
 
 ### [Copyright](copyright) | [License](LICENSE)
 
-[commits-shield]: https://img.shields.io/github/commit-activity/y/ironsheep/RPi-Reporter-MQTT2HA-Daemon.svg?style=for-the-badge
-[commits]: https://github.com/ironsheep/RPi-Reporter-MQTT2HA-Daemon/commits/master
+[commits-shield]: https://img.shields.io/github/commit-activity/y/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon.svg?style=for-the-badge
+[commits]: https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon/commits/master
 
-[license-shield]: https://img.shields.io/github/license/ironsheep/RPi-Reporter-MQTT2HA-Daemon.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon.svg?style=for-the-badge
 
 [maintenance-shield]: https://img.shields.io/badge/maintainer-S%20M%20Moraco%20%40ironsheepbiz-blue.svg?style=for-the-badge
 
-[releases-shield]: https://img.shields.io/github/release/ironsheep/RPi-Reporter-MQTT2HA-Daemon.svg?style=for-the-badge
-[releases]: https://github.com/ironsheep/RPi-Reporter-MQTT2HA-Daemon/releases
+[releases-shield]: https://img.shields.io/github/release/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon.svg?style=for-the-badge
+[releases]: https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon/releases
 

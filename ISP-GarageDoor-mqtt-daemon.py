@@ -181,8 +181,20 @@ dvc_mqtt_script = script_info
 dvc_interfaces = []
 dvc_firmware_version = ''
 
-dvc_switch_left_state = False    # T/F where T means ON
-dvc_switch_right_state = False    # T/F where T means ON
+door_name_left = 'left'
+door_name_right = 'right'
+
+door_open_val = 'open'
+door_opening_val = 'opening'
+door_closed_val = 'closed'
+door_closing_val = 'closing'
+
+cmd_open_val = 'OPEN'
+cmd_close_val = 'CLOSE'
+cmd_stop_val = 'STOP'
+
+dvc_door_left_state = door_closed_val    # state: closed --> opening -> open -> closing...
+dvc_door_right_state = door_closed_val   # state: closed --> opening -> open -> closing...
 
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
@@ -445,13 +457,11 @@ aliveTimerRunningStatus = False
 # -----------------------------------------------------------------------------
 
 # MQTT connection
-base_topic = '{}/switch/{}'.format(base_topic_root, sensor_name.lower())
+
+base_topic = '{}/cover/{}'.format(base_topic_root, sensor_name.lower())
 lwt_topic = '{}/status'.format(base_topic, sensor_name.lower())
 lwt_online_val = 'online'
 lwt_offline_val = 'offline'
-
-door_name_left = 'left'
-door_name_right = 'right'
 
 print_line('Connecting to MQTT broker ...', verbose=True)
 mqtt_client = mqtt.Client()
@@ -463,8 +473,9 @@ command_topic_left = '{}/{}/set'.format(base_topic, door_name_left)
 mqtt_client.subscribe(command_topic_left)
 command_topic_right = '{}/{}/set'.format(base_topic, door_name_right)
 mqtt_client.subscribe(command_topic_right)
-status_topic_left = '{}/{}/status'.format(base_topic, door_name_left)
-status_topic_right = '{}/{}/status'.format(base_topic, door_name_right)
+state_topic_left = '{}/{}/state'.format(base_topic, door_name_left)
+state_topic_right = '{}/{}/state'.format(base_topic, door_name_right)
+
 
 mqtt_client.will_set(lwt_topic, payload=lwt_offline_val, retain=True)
 
@@ -513,13 +524,14 @@ LD_DOOR_LEFT = "garage_door_lt"
 LD_DOOR_RIGHT = "garage_door_rt"
 LDS_PAYLOAD_NAME = "info"
 
-# NOTE: mdi:fire kinda looks like the onion logo
+# FULL CONFIGURATION STATE TOPIC WITHOUT TILT
+#  https://www.home-assistant.io/integrations/cover.mqtt/#full-configuration-state-topic-without-tilt
 
 # Publish our MQTT auto discovery
 #  table of key items to publish:
 detectorValues = OrderedDict([
-    (LD_DOOR_LEFT, dict(title="Garage Door Left", subtopic="left", sensor_type="switch", no_title_prefix="yes", icon='mdi:garage', device_ident='GarageDoor Controller')),
-    (LD_DOOR_RIGHT, dict(title="Garage Door Right", subtopic="right", sensor_type="switch", no_title_prefix="yes", icon='mdi:garage')),
+    (LD_DOOR_LEFT, dict(title="Garage Door Left", subtopic="left", sensor_type="cover", device_class='garage', no_title_prefix="yes", device_ident='Garage Door Controller')),
+    (LD_DOOR_RIGHT, dict(title="Garage Door Right", subtopic="right", sensor_type="cover", device_class='garage', no_title_prefix="yes")),
 ])
 
 print_line('Announcing Omega2 Monitoring device to MQTT broker for auto-discovery ...')
@@ -528,12 +540,13 @@ activity_topic = '{}/status'.format(base_topic)    # vs. LWT
 command_topic_rel = '~/set'
 
 for [sensor, params] in detectorValues.items():
+    activity_topic_rel = '~/status'     # vs. LWT
     if 'subtopic' in params:
-        activity_topic_rel = '~/{}/status'.format(params['subtopic'])     # vs. LWT
         command_topic_rel = '~/{}/set'.format(params['subtopic'])
+        state_topic_rel = '~/{}/state'.format(params['subtopic'])
     else:
-        activity_topic_rel = '~/status'     # vs. LWT
         command_topic_rel = '~/set'
+        state_topic_rel = '~/state'
     if 'sensor_type' in params:
         discovery_topic = 'homeassistant/{}/{}/{}/config'.format(params['sensor_type'], sensor_name.lower(), sensor)
     else:
@@ -548,13 +561,27 @@ for [sensor, params] in detectorValues.items():
         payload['dev_cla'] = params['device_class']
     if 'unit' in params:
         payload['unit_of_measurement'] = params['unit']
-    payload['~'] = base_topic
-    payload['pl_avail'] = lwt_online_val
-    payload['pl_not_avail'] = lwt_offline_val
     if 'icon' in params:
         payload['ic'] = params['icon']
+    payload['~'] = base_topic
+    # payload values (set topic?)
+    payload['pl_cls'] = cmd_close_val
+    payload['pl_open'] = cmd_open_val
+    payload['pl_stop'] = cmd_stop_val
+    # State values
+    payload['stat_clsd'] = door_closed_val
+    payload['stat_closing'] = door_closing_val
+    payload['stat_open'] = door_open_val
+    payload['stat_opening'] = door_opening_val
+    payload['stat_t'] = state_topic_rel
+    # LWT Values & topic
+    payload['pl_avail'] = lwt_online_val
+    payload['pl_not_avail'] = lwt_offline_val
     payload['avty_t'] = activity_topic_rel
     payload['cmd_t'] = command_topic_rel
+    #payload['stat_val_tpl'] = '{{ value.state }}'
+    payload['val_tpl'] = '{{ value_json.state }}'
+    #payload['schema'] = 'json'
     if 'device_ident' in params:
         payload['dev'] = {
                 'identifiers' : ["{}".format(uniqID)],
@@ -622,9 +649,7 @@ OMEGA_NET_CONFIG = "network"
 OMEGA_SCRIPT = "script"
 SCRIPT_REPORT_INTERVAL = "report_interval"
 
-SW_STATUS = "status"
-SW_VALUE_ON = "ON"
-SW_VALUE_OFF = "OFF"
+DOOR_STATE = "state"
 
 def send_status(timestamp, nothing):
 
@@ -643,24 +668,21 @@ def send_status(timestamp, nothing):
     omegaData[OMEGA_SCRIPT] = dvc_mqtt_script.replace('.py', '')
     omegaData[SCRIPT_REPORT_INTERVAL] = interval_in_minutes
 
-    rpiTopDict = OrderedDict()
-    rpiTopDict[LDS_PAYLOAD_NAME] = omegaData
+    omegaTopDict = OrderedDict()
+    omegaTopDict[LDS_PAYLOAD_NAME] = omegaData
 
-    _thread.start_new_thread(publishMonitorData, (rpiTopDict, status_topic_right))
+    _thread.start_new_thread(publishMonitorData, (omegaTopDict, state_topic_right))
 
 def send_sw_status(timestamp, topic):
     omegaData = OrderedDict()
 
     if 'left' in topic:
-        switch_value =  dvc_switch_left_state
+        state_value =  dvc_door_left_state
     else:
-        switch_value =  dvc_switch_right_state
+        state_value =  dvc_door_right_state
 
-    switch_value_string = SW_VALUE_ON
-    if switch_value == False:
-        switch_value_string = SW_VALUE_OFF
-
-    omegaData[SW_STATUS] = switch_value_string
+    omegaData[DOOR_STATE] = state_value
+    omegaData[SCRIPT_TIMESTAMP] = timestamp.astimezone().replace(microsecond=0).isoformat()
 
     _thread.start_new_thread(publishSwitchValue, (omegaData, topic))
 
@@ -726,8 +748,8 @@ def handle_interrupt(channel):
 
     if (opt_stall == False or reported_first_time == False and opt_stall == True):
         # ok, report our new detection to MQTT
-        _thread.start_new_thread(send_sw_status, (current_timestamp, status_topic_left))
-        _thread.start_new_thread(send_sw_status, (current_timestamp, status_topic_right))
+        _thread.start_new_thread(send_sw_status, (current_timestamp, state_topic_left))
+        _thread.start_new_thread(send_sw_status, (current_timestamp, state_topic_right))
         reported_first_time = True
     else:
         print_line(sourceID + " >> Time to report! (%s) but SKIPPED (TEST: stall)" % current_timestamp.strftime('%H:%M:%S - %Y/%m/%d'), verbose=True)
