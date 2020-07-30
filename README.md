@@ -8,7 +8,16 @@
 
 A simple Python script which is an MQTT sender/listener providing twin switches (left and right garage doors)  via [MQTT](https://projects.eclipse.org/projects/iot.mosquitto) to your [Home Assistant](https://www.home-assistant.io/) installation. 
 
-This script should be configured to be run in **daemon mode** continously in the background as a System-V init script.
+This script should be configured to be run in **daemon mode** continously in the background as a System-V init script. (using instructions/scripts provided)
+
+
+--
+
+**This is a work in progress!** 
+
+(*this marker will be removed once the full system is working and code is committed to this repo*)
+
+--
 
 # Project Hardware
 
@@ -176,7 +185,12 @@ When this script is running data will be published to the (configured) MQTT brok
 
 This data can be subscribed to and processed by your home assistant installation. 
 
-----
+## Credits
+
+Thank you to Thomas Dietrich for providing a wonderful pattern for this project. His project, which I use and heartily recommend, is [miflora-mqtt-deamon](https://github.com/ThomDietrich/miflora-mqtt-daemon)
+
+
+---
 
 
 ## Disclaimer and Legal
@@ -188,7 +202,7 @@ This data can be subscribed to and processed by your home assistant installation
 >
 > This project is in no way affiliated with, authorized, maintained, sponsored or endorsed by *Onion Corporation* or any of its affiliates or subsidiaries.
 
-----
+---
 
 
 ### [Copyright](copyright) | [License](LICENSE)
