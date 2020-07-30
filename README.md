@@ -2,6 +2,9 @@
 
 ![Project Maintenance][maintenance-shield]
 
+[![GitHub Activity][commits-shield]][commits]
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 A simple Python script which is an MQTT sender/listener providing twin switches (left and right garage doors)  via [MQTT](https://projects.eclipse.org/projects/iot.mosquitto) to your [Home Assistant](https://www.home-assistant.io/) installation. 
 
@@ -14,15 +17,16 @@ This script should be configured to be run in **daemon mode** continously in the
 This is the [onion Omega2+](https://onion.io/store/omega2p) mounted on an [Expansion Dock](https://onion.io/store/expansion-dock/) with the (dual) relay exapnsion *which they no longer sell* but can still be found in their [Maker Kit](https://docs.onion.io/omega2-maker-kit/)
 
 
-## FeaturesDOCs
+## Features
 
+* Registers two garage door controls with Home Assistant
 * Tested on Omega2+ running OpenWrt v4.14.81
 * Tested with Home Assistant v0.111.0
 * Tested with Mosquitto broker v5.1
 * Data is published via MQTT
-* MQTT discovery messages are sent so RPi's are automatically registered with Home Assistant (if MQTT discovery is enabled in your HA installation)
+* MQTT discovery messages are sent so this controller is automatically registered with Home Assistant (if MQTT discovery is enabled in your HA installation)
 * MQTT authentication support
-* No special/root privileges are required by this mechanism
+
 
 ### Omega2+ Device MQTT Discovery
 
@@ -151,7 +155,7 @@ Like most active developers, we periodically upgrade our script. You can update 
    /etc/init.d/garage-daemon stop
    
    # get the latest version
-   sudo git pull  *--> FIX ME this is NOT yet the desired for to use for update <--*
+   sudo git pull  *--> FIX ME this is NOT yet the desired form to use for update <--*
 
 	# start the service with your new version
    /etc/init.d/garage-daemon start
