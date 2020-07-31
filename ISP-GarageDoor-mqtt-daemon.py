@@ -238,34 +238,47 @@ def handleDoorRequest(desired_door, command):
     desired_state = command.lower()
     # if we are not at desired state, then we've something to do
     if initial_door_state != desired_state:
-        print_line('* door [{}] moving to [{}]'.format(desired_door, command), debug=True)
+        if command == cmd_stop_val and initial_door_state != door_opening_val and initial_door_state != door_closing_val:
+            print_line('* door [{}] [{}] requested, but already STOPPED, Skipping...'.format(desired_door, command), debug==True)
+        else:
+            print_line('* door [{}] moving to [{}]'.format(desired_door, command), debug=True)
+            needTimeout = False
+            isStopped = False
+            validCommand = True
+            if command == cmd_open_val:
+                next_state = door_opening_val
+                end_state = door_open_val
+                needTimeout = True
+            elif command == cmd_close_val:
+                next_state = door_closing_val
+                end_state = door_closed_val
+                needTimeout = True
+            elif command == cmd_stop_val:
+                if initial_door_state != door_open_val and initial_door_state != door_closed_val:
+                    # let's handle stop when door moving
+                    isStopped = True
+                    # this should stop our timer and pause the door movent 
+                    #   (preventing the end change that would have happened)
+            else:
+                # HUH, what is this command?
+                validCommand = False 
+                print_line('* door [{}] but INVALID command [{}], aborted.'.format(desired_door, command), error=True)
 
-        needTimeout = False
-        if command == cmd_open_val:
-            next_state = door_opening_val
-            end_state = door_open_val
-            needTimeout = True
-        elif command == cmd_close_val:
-            next_state = door_closing_val
-            end_state = door_closed_val
-            needTimeout = True
+            if validCommand:
+                #  FIXME undone let's add code to handle stop
 
-        #  FIXME undone let's add code to handle stop
+                if isStopped == False:
+                    # record our intermediate state
+                    setNewDoorState(desired_door, next_state)
+                    sendDoorValueChange(desired_door)
 
-        #elif command == cmd_stop_val:
-        #    pass
-        
-        # record our intermediate state
-        setNewDoorState(desired_door, next_state)
-        sendDoorValueChange(desired_door)
+                    if needTimeout:
+                        # delay for 12 seconds
+                        sleep(12.5)
 
-        if needTimeout:
-            # delay for 12 seconds
-            sleep(12.5)
-
-        # record our end state
-        setNewDoorState(desired_door, end_state)
-        sendDoorValueChange(desired_door)
+                    # record our end state
+                    setNewDoorState(desired_door, end_state)
+                    sendDoorValueChange(desired_door)
 
     else:
         print_line('* door [{}] already [{}], nothing to do.'.format(desired_door, command), debug=True)
