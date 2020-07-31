@@ -56,3 +56,16 @@
 
 # Path to TLS client auth certificate file
 #tls_certfile =
+
+
+[Doors]
+
+# we have two garage doors for this sensor
+#   If you wish to use custom names for the doors specify the names here
+#  (keep the names short, no spaces and only [a-z0-9A-z])
+
+# our 1st door has the default name of 'left'
+#door_1_name = left
+
+# our 2nd door has the default name of 'right'
+#door_2_name = right

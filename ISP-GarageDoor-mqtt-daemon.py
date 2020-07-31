@@ -46,7 +46,7 @@ opt_debug = False
 opt_verbose = False
 
 # Logging function
-def print_line(text, error=False, warning=False, info=False, verbose=False, debug=False, console=True):
+def print_line(text, error=False, warning=False, info=False, verbose=False, debug=False, console=True, log=False):
     timestamp = strftime('%Y-%m-%d %H:%M:%S', localtime())
     if console:
         if error:
@@ -56,9 +56,15 @@ def print_line(text, error=False, warning=False, info=False, verbose=False, debu
         elif info or verbose:
             if opt_verbose:
                 print(Fore.GREEN + '[{}] '.format(timestamp) + Fore.YELLOW  + '- ' + '{}'.format(text) + Style.RESET_ALL)
+            else:
+                print(Fore.GREEN + '[{}] '.format(timestamp) + Fore.WHITE  + '- ' + '{}'.format(text) + Style.RESET_ALL)
+        elif log:
+            if opt_debug:
+                print(Fore.MAGENTA + '[{}] '.format(timestamp) + '- (DBG): ' + '{}'.format(text) + Style.RESET_ALL)
         elif debug:
             if opt_debug:
                 print(Fore.CYAN + '[{}] '.format(timestamp) + '- (DBG): ' + '{}'.format(text) + Style.RESET_ALL)
+
         else:
             print(Fore.GREEN + '[{}] '.format(timestamp) + Style.RESET_ALL + '{}'.format(text) + Style.RESET_ALL)
 
@@ -91,27 +97,6 @@ if opt_debug:
 if opt_stall:
     print_line('TEST: Stall (no-re-reporting) enabled', debug=True)
 
-# Eclipse Paho callbacks - http://www.eclipse.org/paho/clients/python/docs/#callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print_line('* MQTT connection established', console=True)
-        print_line('')  # blank line?!
-        #_thread.start_new_thread(afterMQTTConnect, ())
-    else:
-        print_line('! Connection error with result code {} - {}'.format(str(rc), mqtt.connack_string(rc)), error=True)
-        #kill main thread
-        os._exit(1)
-
-def on_publish(client, userdata, mid):
-    #print_line('* Data successfully published.')
-    pass
-
-def on_message(client, userdata, message):
-    print_line("message received {}".format(str(message.payload.decode("utf-8"))), debug=True)
-    print_line("message topic={}".format(message.topic), debug=True)
-    print_line("message qos={}".format(message.qos), debug=True)
-    print_line("message retain flag={}".format(message.retain), debug=True)
-
 # Load configuration file
 config = ConfigParser(delimiters=('=', ), inline_comment_prefixes=('#'))
 config.optionxform = str
@@ -129,15 +114,18 @@ daemon_enabled = config['Daemon'].getboolean('enabled', True)
 default_domain = ''
 fallback_domain = config['Daemon'].get('fallback_domain', default_domain).lower()
 
-# This script uses a flag file containing a date/timestamp of when the system was last updated
-default_update_flag_filespec = '/home/pi/bin/lastupd.date'
-update_flag_filespec = config['Daemon'].get('update_flag_filespec', default_update_flag_filespec)
-
 default_base_topic = 'home/nodes'
-default_sensor_name = 'garage-doors'
-
 base_topic_root = config['MQTT'].get('base_topic', default_base_topic).lower()
+
+default_sensor_name = 'garage-doors'
 sensor_name = config['MQTT'].get('sensor_name', default_sensor_name).lower()
+
+default_left_name = 'left'
+door_name_left = config['Doors'].get('door_1_name', default_left_name).lower()
+
+default_right_name = 'right'
+door_name_right = config['Doors'].get('door_2_name', default_right_name).lower()
+
 
 # report our RPi values every 5min 
 min_interval_in_minutes = 2
@@ -157,6 +145,46 @@ if not config['MQTT']:
     sys.exit(1)
 
 print_line('Configuration accepted', console=False)
+
+# -----------------------------------------------------------------------------
+#  MQTT handlers
+# -----------------------------------------------------------------------------
+
+# Eclipse Paho callbacks - http://www.eclipse.org/paho/clients/python/docs/#callbacks
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print_line('* MQTT connection established', console=True)
+        print_line('', console=True)  # blank line?!
+        #_thread.start_new_thread(afterMQTTConnect, ())
+    else:
+        print_line('! Connection error with result code {} - {}'.format(str(rc), mqtt.connack_string(rc)), error=True)
+        #kill main thread
+        os._exit(1)
+
+def on_publish(client, userdata, mid):
+    #print_line('* Data successfully published.')
+    pass
+
+def on_log(client, userdata, level, buf):
+    #print_line('* Data successfully published.')
+    print_line("log: {}".format(buf), debug=True, log=True)
+
+def on_message(client, userdata, message):
+    command = str(message.payload.decode("utf-8"))
+    print_line("message received [{}]".format(command), debug=True)
+    print_line("message topic=[{}]".format(message.topic), debug=True)
+    print_line("message qos=[{}]".format(message.qos), debug=True)
+    print_line("message retain flag=[{}]".format(message.retain), debug=True)
+
+    if door_name_left in message.topic or door_name_right in message.topic:
+        door = door_name_left
+        if door_name_right in message.topic:
+            door = door_name_right
+        # go act on door request
+        _thread.start_new_thread(handleDoorRequest, (door, command))
+
+
+    
 
 # -----------------------------------------------------------------------------
 #  RPi variables monitored 
@@ -181,8 +209,7 @@ dvc_mqtt_script = script_info
 dvc_interfaces = []
 dvc_firmware_version = ''
 
-door_name_left = 'left'
-door_name_right = 'right'
+
 
 door_open_val = 'open'
 door_opening_val = 'opening'
@@ -195,6 +222,84 @@ cmd_stop_val = 'STOP'
 
 dvc_door_left_state = door_closed_val    # state: closed --> opening -> open -> closing...
 dvc_door_right_state = door_closed_val   # state: closed --> opening -> open -> closing...
+
+def handleDoorRequest(desired_door, command):
+    global door_open_val
+    global door_opening_val
+    global door_closed_val
+    global door_closing_val
+    global cmd_open_val
+    global cmd_close_val
+    global cmd_stop_val
+    print_line("* handleDoorRequest({}, {})".format(desired_door, command), verbose=True)
+
+    # setup our current state
+    initial_door_state = getDoorState(desired_door)
+    desired_state = command.lower()
+    # if we are not at desired state, then we've something to do
+    if initial_door_state != desired_state:
+        print_line('* door [{}] moving to [{}]'.format(desired_door, command), debug=True)
+
+        needTimeout = False
+        if command == cmd_open_val:
+            next_state = door_opening_val
+            end_state = door_open_val
+            needTimeout = True
+        elif command == cmd_close_val:
+            next_state = door_closing_val
+            end_state = door_closed_val
+            needTimeout = True
+
+        #  FIXME undone let's add code to handle stop
+
+        #elif command == cmd_stop_val:
+        #    pass
+        
+        # record our intermediate state
+        setNewDoorState(desired_door, next_state)
+        sendDoorValueChange(desired_door)
+
+        if needTimeout:
+            # delay for 12 seconds
+            sleep(12.5)
+
+        # record our end state
+        setNewDoorState(desired_door, end_state)
+        sendDoorValueChange(desired_door)
+
+    else:
+        print_line('* door [{}] already [{}], nothing to do.'.format(desired_door, command), debug=True)
+
+def sendDoorValueChange(desired_door):
+    current_timestamp = datetime.now(local_tz)
+    if desired_door == door_name_left:
+        _thread.start_new_thread(send_door_status, (current_timestamp, state_topic_left))
+    else:
+        _thread.start_new_thread(send_door_status, (current_timestamp, state_topic_right))
+
+def getDoorState(desired_door):
+    # capture prior
+    global dvc_door_right_state
+    global dvc_door_left_state
+    desired_state = dvc_door_right_state
+    if desired_door == door_name_left:
+        desired_state = dvc_door_left_state
+    return desired_state
+
+def setNewDoorState(desired_door, new_state):
+    # capture prior
+    global dvc_door_right_state
+    global dvc_door_left_state
+    prior_state = dvc_door_right_state
+    if desired_door == door_name_left:
+        prior_state = dvc_door_left_state
+    # set new
+    if desired_door == door_name_left:
+        dvc_door_left_state = new_state
+    else:
+        dvc_door_right_state = new_state
+    # report
+    print_line('* door [{}]: [{}] -> [{}]'.format(desired_door, prior_state, new_state), debug=True)
 
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
@@ -341,17 +446,17 @@ def getNetworkIFs():    # RERUN in loop
                     dvc_mac_raw = lineParts[4]
                 #print_line('newIF=[{}]'.format(imterfc), debug=True)
                 tmpInterfaces.append(newTuple)
-                print_line('newTuple=[{}]'.format(newTuple), debug=True)
+                #print_line('newTuple=[{}]'.format(newTuple), debug=True)
             elif haveIF == True:
                 print_line('IF=[{}], lineParts=[{}]'.format(imterfc, lineParts), debug=True)
                 if 'ether' in currLine: # NEWER ONLY
                     newTuple = (imterfc, 'mac', lineParts[1])
                     tmpInterfaces.append(newTuple)
-                    print_line('newTuple=[{}]'.format(newTuple), debug=True)
+                    #print_line('newTuple=[{}]'.format(newTuple), debug=True)
                 elif 'inet' in currLine:  # OLDER & NEWER
                     newTuple = (imterfc, 'IP', lineParts[1].replace('addr:',''))
                     tmpInterfaces.append(newTuple)
-                    print_line('newTuple=[{}]'.format(newTuple), debug=True)
+                    #print_line('newTuple=[{}]'.format(newTuple), debug=True)
 
     dvc_interfaces = tmpInterfaces
     print_line('dvc_interfaces=[{}]'.format(dvc_interfaces), debug=True)
@@ -468,13 +573,15 @@ mqtt_client = mqtt.Client()
 mqtt_client.on_connect = on_connect
 mqtt_client.on_publish = on_publish
 mqtt_client.on_message = on_message    
+mqtt_client.on_log = on_log
 
 command_topic_left = '{}/{}/set'.format(base_topic, door_name_left)
-mqtt_client.subscribe(command_topic_left)
+
 command_topic_right = '{}/{}/set'.format(base_topic, door_name_right)
-mqtt_client.subscribe(command_topic_right)
+
 state_topic_left = '{}/{}/state'.format(base_topic, door_name_left)
 state_topic_right = '{}/{}/state'.format(base_topic, door_name_right)
+
 
 
 mqtt_client.will_set(lwt_topic, payload=lwt_offline_val, retain=True)
@@ -505,6 +612,7 @@ except:
 else:
     mqtt_client.publish(lwt_topic, payload=lwt_online_val, retain=False)
     mqtt_client.loop_start()
+
     sleep(1.0) # some slack to establish the connection
     startAliveTimer()
 
@@ -530,8 +638,8 @@ LDS_PAYLOAD_NAME = "info"
 # Publish our MQTT auto discovery
 #  table of key items to publish:
 detectorValues = OrderedDict([
-    (LD_DOOR_LEFT, dict(title="Garage Door Left", subtopic="left", sensor_type="cover", device_class='garage', no_title_prefix="yes", device_ident='Garage Door Controller')),
-    (LD_DOOR_RIGHT, dict(title="Garage Door Right", subtopic="right", sensor_type="cover", device_class='garage', no_title_prefix="yes")),
+    (LD_DOOR_LEFT, dict(title="GarageDr Left", subtopic=door_name_left, sensor_type="cover", device_class='garage', no_title_prefix="yes", device_ident='Garage Door Controller')),
+    (LD_DOOR_RIGHT, dict(title="GarageDr Right", subtopic=door_name_right, sensor_type="cover", device_class='garage', no_title_prefix="yes")),
 ])
 
 print_line('Announcing Omega2 Monitoring device to MQTT broker for auto-discovery ...')
@@ -553,9 +661,9 @@ for [sensor, params] in detectorValues.items():
         discovery_topic = 'homeassistant/sensor/{}/{}/config'.format(sensor_name.lower(), sensor)
     payload = OrderedDict()
     if 'no_title_prefix' in params:
-        payload['name'] = "{}".format(params['title'].title())
+        payload['name'] = "{}".format(params['title'])
     else:
-        payload['name'] = "{} {}".format(sensor_name.title(), params['title'].title())
+        payload['name'] = "{} {}".format(sensor_name.title(), params['title'])
     payload['uniq_id'] = "{}_{}".format(uniqID, sensor.lower())
     if 'device_class' in params:
         payload['dev_cla'] = params['device_class']
@@ -564,6 +672,7 @@ for [sensor, params] in detectorValues.items():
     if 'icon' in params:
         payload['ic'] = params['icon']
     payload['~'] = base_topic
+
     # payload values (set topic?)
     payload['pl_cls'] = cmd_close_val
     payload['pl_open'] = cmd_open_val
@@ -673,10 +782,12 @@ def send_status(timestamp, nothing):
 
     _thread.start_new_thread(publishMonitorData, (omegaTopDict, state_topic_right))
 
-def send_sw_status(timestamp, topic):
+def send_door_status(timestamp, topic):
+    global dvc_door_right_state
+    global dvc_door_left_state
     omegaData = OrderedDict()
 
-    if 'left' in topic:
+    if door_name_left in topic:
         state_value =  dvc_door_left_state
     else:
         state_value =  dvc_door_right_state
@@ -684,7 +795,7 @@ def send_sw_status(timestamp, topic):
     omegaData[DOOR_STATE] = state_value
     omegaData[SCRIPT_TIMESTAMP] = timestamp.astimezone().replace(microsecond=0).isoformat()
 
-    _thread.start_new_thread(publishSwitchValue, (omegaData, topic))
+    _thread.start_new_thread(publishDoorValues, (omegaData, topic))
 
 def getNetworkDictionary():
     global dvc_interfaces
@@ -720,7 +831,7 @@ def publishMonitorData(latestData, topic):
     mqtt_client.publish('{}'.format(topic), json.dumps(latestData), 1, retain=False)
     sleep(0.5) # some slack for the publish roundtrip and callback function  
 
-def publishSwitchValue(latestData, topic):
+def publishDoorValues(latestData, topic):
     print_line('Publishing to MQTT topic "{}, Data:{}"'.format(topic, json.dumps(latestData)))
     mqtt_client.publish('{}'.format(topic), json.dumps(latestData), 1, retain=False)
     sleep(0.5) # some slack for the publish roundtrip and callback function  
@@ -748,8 +859,8 @@ def handle_interrupt(channel):
 
     if (opt_stall == False or reported_first_time == False and opt_stall == True):
         # ok, report our new detection to MQTT
-        _thread.start_new_thread(send_sw_status, (current_timestamp, state_topic_left))
-        _thread.start_new_thread(send_sw_status, (current_timestamp, state_topic_right))
+        _thread.start_new_thread(send_door_status, (current_timestamp, state_topic_left))
+        _thread.start_new_thread(send_door_status, (current_timestamp, state_topic_right))
         reported_first_time = True
     else:
         print_line(sourceID + " >> Time to report! (%s) but SKIPPED (TEST: stall)" % current_timestamp.strftime('%H:%M:%S - %Y/%m/%d'), verbose=True)
@@ -757,6 +868,12 @@ def handle_interrupt(channel):
 def afterMQTTConnect():
     print_line('* afterMQTTConnect()', verbose=True)
     #  NOTE: this is run after MQTT connects
+
+    print_line('* SUBSCRIBE to [{}]'.format(command_topic_left), verbose=True);
+    mqtt_client.subscribe(command_topic_left)
+    print_line('* SUBSCRIBE to [{}]'.format(command_topic_right), verbose=True);
+    mqtt_client.subscribe(command_topic_right)
+
     # start our interval timer
     startPeriodTimer()
     # do our first report
