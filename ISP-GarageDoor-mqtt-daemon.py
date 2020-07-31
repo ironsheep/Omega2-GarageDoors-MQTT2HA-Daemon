@@ -239,7 +239,7 @@ def handleDoorRequest(desired_door, command):
     # if we are not at desired state, then we've something to do
     if initial_door_state != desired_state:
         if command == cmd_stop_val and initial_door_state != door_opening_val and initial_door_state != door_closing_val:
-            print_line('* door [{}] [{}] requested, but already STOPPED, Skipping...'.format(desired_door, command), debug==True)
+            print_line('* door [{}] [{}] requested, but already STOPPED, Skipping...'.format(desired_door, command), debug=True)
         else:
             print_line('* door [{}] moving to [{}]'.format(desired_door, command), debug=True)
             needTimeout = False
@@ -577,7 +577,7 @@ aliveTimerRunningStatus = False
 # MQTT connection
 
 base_topic = '{}/cover/{}'.format(base_topic_root, sensor_name.lower())
-lwt_topic = '{}/status'.format(base_topic, sensor_name.lower())
+lwt_topic = '{}/status'.format(base_topic)
 lwt_online_val = 'online'
 lwt_offline_val = 'offline'
 
@@ -882,9 +882,9 @@ def afterMQTTConnect():
     print_line('* afterMQTTConnect()', verbose=True)
     #  NOTE: this is run after MQTT connects
 
-    print_line('* SUBSCRIBE to [{}]'.format(command_topic_left), verbose=True);
+    print_line('* SUBSCRIBE to [{}]'.format(command_topic_left), verbose=True)
     mqtt_client.subscribe(command_topic_left)
-    print_line('* SUBSCRIBE to [{}]'.format(command_topic_right), verbose=True);
+    print_line('* SUBSCRIBE to [{}]'.format(command_topic_right), verbose=True)
     mqtt_client.subscribe(command_topic_right)
 
     # start our interval timer
