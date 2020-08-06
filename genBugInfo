@@ -325,6 +325,26 @@ endCommand
 
 # ----------------------------------------------------------------------
 
+showCommand "/bin/df -m"
+if [ ${VERBOSE_LEVEL} -gt 0 -a -z "${WITHOUT_DOING}" ]; then
+/bin/df -m
+else 
+/bin/df -m >>${OUTFILE} 2>&1
+fi
+endCommand
+
+# ----------------------------------------------------------------------
+
+showCommand "/bin/df -m | /usr/bin/tail -n +2 | /bin/egrep -v 'tmpfs'"
+if [ ${VERBOSE_LEVEL} -gt 0 -a -z "${WITHOUT_DOING}" ]; then
+/bin/df -m | /usr/bin/tail -n +2 | /bin/egrep -v 'tmpfs'
+else 
+/bin/df -m | /usr/bin/tail -n +2 | /bin/egrep -v 'tmpfs' >>${OUTFILE} 2>&1
+fi
+endCommand
+
+# ----------------------------------------------------------------------
+
 if [ -f ${OUTFILE} ]; then
 	progressMessage "Wrote ${OUTFILE}"
 fi

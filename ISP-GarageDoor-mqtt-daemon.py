@@ -200,13 +200,13 @@ dvc_linux_version = ''
 dvc_uptime_raw = ''
 dvc_uptime = ''
 dvc_mac_raw = ''
+dvc_interfaces = []
 dvc_last_update_date = datetime.min
 dvc_filesystem_space_raw = ''
 dvc_filesystem_space = ''
 dvc_filesystem_percent = ''
 dvc_system_temp = ''
 dvc_mqtt_script = script_info
-dvc_interfaces = []
 dvc_firmware_version = ''
 
 
@@ -325,7 +325,7 @@ def getDeviceModel():
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_model_raw = stdout.decode('utf-8').replace("'",'').rstrip()
     # now reduce string length (just more compact, same info)
     dvc_model = dvc_model_raw.replace('p', '+')
@@ -339,7 +339,7 @@ def getDeviceModel():
 
 def getLinuxRelease():
     global dvc_linux_release
-    dvc_linux_release = 'lede'
+    dvc_linux_release = 'openWrt'
     print_line('dvc_linux_release=[{}]'.format(dvc_linux_release), debug=True)
 
 def getLinuxVersion():
@@ -348,7 +348,7 @@ def getLinuxVersion():
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_linux_version = stdout.decode('utf-8').rstrip()
     print_line('dvc_linux_version=[{}]'.format(dvc_linux_version), debug=True)
     
@@ -358,7 +358,7 @@ def getFirmwareVersion():
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     fw_version_raw = stdout.decode('utf-8').rstrip()
     lineParts = fw_version_raw.split(':')
     dvc_firmware_version = lineParts[1].lstrip()
@@ -370,7 +370,7 @@ def getProcessorType():
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_processor_family = stdout.decode('utf-8').rstrip()
     print_line('dvc_processor_family=[{}]'.format(dvc_processor_family), debug=True)
     
@@ -382,7 +382,7 @@ def getHostnames():
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_hostname = stdout.decode('utf-8').rstrip().replace("'", '')
     print_line('dvc_hostname=[{}]'.format(dvc_hostname), debug=True)
     if len(fallback_domain) > 0:
@@ -398,7 +398,7 @@ def getUptime():    # RERUN in loop
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_uptime_raw = stdout.decode('utf-8').rstrip().lstrip()
     print_line('dvc_uptime_raw=[{}]'.format(dvc_uptime_raw), debug=True)
     basicParts = dvc_uptime_raw.split()
@@ -418,7 +418,7 @@ def getNetworkIFs():    # RERUN in loop
            shell=True,
            stdout=subprocess.PIPE, 
            stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     lines = stdout.decode('utf-8').split("\n")
     trimmedLines = []
     for currLine in lines:
@@ -482,7 +482,7 @@ def getFileSystemSpace():    # RERUN in loop
             shell=True,
             stdout=subprocess.PIPE, 
             stderr=subprocess.STDOUT)
-    stdout,stderr = out.communicate()
+    stdout,_ = out.communicate()
     dvc_filesystem_space_raw = stdout.decode('utf-8').rstrip()
     print_line('dvc_filesystem_space_raw=[{}]'.format(dvc_filesystem_space_raw), debug=True)
     lineParts = dvc_filesystem_space_raw.split()
@@ -517,11 +517,11 @@ def getLastUpdateDate():    # RERUN in loop
     dvc_last_update_date  = last_modified_date
     print_line('dvc_last_update_date=[{}]'.format(dvc_last_update_date), debug=True)
 
-# get our hostnames so we can setup MQTT
+# get model so we can use it too in MQTT
 getDeviceModel()
 getFirmwareVersion()
+# get our hostnames so we can setup MQTT
 getHostnames()
-# get model so we can use it too in MQTT
 getLastUpdateDate()
 getLinuxRelease()
 getLinuxVersion()
