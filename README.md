@@ -29,7 +29,7 @@ This is the [onion Omega2+](https://onion.io/store/omega2p) mounted on an [Expan
 ## Features
 
 * Registers two garage door controls with Home Assistant
-* Tested on Omega2+ running OpenWrt v4.14.81
+* Tested on Omega2+ v0.3.2 b244 running OpenWrt v4.14.81
 * Tested with Home Assistant v0.111.0
 * Tested with Mosquitto broker v5.1
 * Data is published via MQTT
@@ -46,7 +46,7 @@ The Omega2 Garage Door device is reported as:
 | `Manufacturer`   | Onion Corporation |
 | `Model`         | Omega2+  |
 | `Name`      | GarageDoor Controller |
-| `sofware ver`  | Name, Version (e.g., 0.3.2 b233) |
+| `sofware ver`  | Name, Version (e.g., v0.3.2 b233) |
 
 ### Omega2+ MQTT Topics
 
@@ -66,18 +66,39 @@ MQTT is huge help in connecting different parts of your smart home and setting u
 
 ## Installation
 
-On the OpenWrt system just a few steps are needed to get the daemon working.
-The following example shows the installation on OpenWrt below the `/opt` directory:
+On a OpenWrt just a few steps are needed to get the daemon working.
+
+To begin installation we need to find the latest released version of this script. Visit our [releases page](https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon/releases) to find the latest release. Copy the Link Address of the file you want to use for install (.zip or .tar.gz file)
+
+The following example shows the installation below the `/opt` directory:
 
 ```shell
+# make sure we have python3 installed
 opkg install python3 python3-pip
 
-*--> FIXME let's use download and unpack release instead of git clone <--*
-sudo git clone https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon.git /opt/Omega2-GarageDoors-MQTT2HA-Daemon
+# go to home directory
+cd
 
+# download the file
+wget {the link address you copied}
+
+# make our /opt directory if not already present
+mkdir /opt
+
+# move to new directory
+cd /opt
+
+# unpack the release file just downloaded
+tar -xzvf /root/{filename}.tar.gz
+(or) unzip /root/{filename}.zip
+
+# this installed our files in /opt/Omega2-GarageDoors-MQTT2HA-Daemon, go there
 cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
+
+# and install our extra python support
 sudo pip3 install -r requirements.txt
 ```
+
 ## Configuration
 
 To match personal needs, all operational details can be configured by modifying entries within the file [`config.ini`](config.ini.dist).
@@ -125,60 +146,81 @@ python3 /opt/Omega2-GarageDoors-MQTT2HA-Daemon/ISP-GarageDoor-mqtt-daemon.py --c
 
 ### Configure to run script at startup
 
-You will want to run this script at startup as a System-V init script.
-
-Let's look at how to set set this up: 
+Now we need to configure our system service. OpenWrt uses the SysV init script convention so let's set this up.
 
 **NOTE:** Daemon mode must be enabled in the configuration file (default).
 
+ 
+#### Run as Sys V init script
+
+In this form our wrapper script located in the /etc/init.d directory and is run according to symbolic links in the `/etc/rc.x` directories.
+
+Set up the script to be run as a Sys V init script as follows:
 
    ```shell
-   ln -s /opt/Omega2-GarageDoors-MQTT2HA-Daemon/garage-daemon /etc/init.d/garage-daemon
+   ln -s /opt/Omega2-GarageDoors-MQTT2HA-Daemon/gardoors-daemon /etc/init.d/gardoors-daemon
 
-	# create the autostart links
-	update-rc.d /etc/init.d/garage-daemon defaults
-	
-	# start the service with your new version
-   /etc/init.d/garage-daemon start
-   
-   # if you want, check status of the running script
-   /etc/init.d/garage-daemon status
+	# configure system to start this script at boot time
+   update-rc.d gardoors-daemon defaults
+
+   # let's start the script now, too so we don't have to reboot
+   /etc/init.d/gardoors-daemon start
+  
+   # check to make sure all is ok with the start up
+   /etc/init.d/gardoors-daemon status
    ```
-   
-**NOTE**: Raspian 'Jessie' does not fully support all of these systemctl commands
 
-- **systemctl enable isp-rpi-reporter.service** # does not work. (we're looking at alternative for startup on reboot and verifying if it is starting or not...)
-   
-**NOTE:** *Please remember to run the 'systemctl enable ...' once at first install, if you want your script to start up everytime your RPi reboots!*
-
-   
 ### Update to latest
 
-Like most active developers, we periodically upgrade our script. You can update to the latest we've published by following these steps:
+Like most active developers, we periodically upgrade our script. 
+
+To begin installation we need to find the latest released version of this script. Visit our [releases page](https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon/releases) to find the latest release. Copy the Link Address of the file you want to use for install (.zip or .tar.gz file)
+
+The following example shows the installation below the `/opt` directory:
+
+```shell
+# go to home directory
+cd
+
+# download the file
+wget {the link address you copied}
+```
+
+
+Now You can update to the latest by following these steps:
 
    ```shell
-   # go to local install location
-   cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
-      
    # stop the service
-   /etc/init.d/garage-daemon stop
+   sudo /etc/init.d/gardoors-daemon stop
    
-   # get the latest version
-   sudo git pull  *--> FIX ME this is NOT yet the desired form to use for update <--*
+   # move to installed options directory
+   cd /opt
 
-	# start the service with your new version
-   /etc/init.d/garage-daemon start
+   # move our existing directory out of the way
+   mv Omega2-GarageDoors-MQTT2HA-Daemon Omega2-GarageDoors-MQTT2HA-Daemon-old
+
+   # unpack the latest release file just downloaded
+   tar -xzvf /root/{filename}.tar.gz
+   (or) unzip /root/{filename}.zip
+
+   # this installed our updated files in /opt/Omega2-GarageDoors-MQTT2HA-Daemon, go there
+   cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
+   # (this makes sure our new files arrived in desired location)
+
+   # restart the service with your new version
+   sudo /etc/init.d/gardoors-daemon start
+
+   # check status of the running script
+   sudo /etc/init.d/gardoors-daemon status
    
-   # if you want, check status of the running script
-   /etc/init.d/garage-daemon status
+   # if the status looks good then remove the older isntall directory
+   rm -rf /opt/Omega2-GarageDoors-MQTT2HA-Daemon-old
 
    ```
-
-   
    
 ## Integration
 
-When this script is running data will be published to the (configured) MQTT broker topic "`raspberrypi/{hostname}/...`" (e.g. `raspberrypi/picam01/...`).
+When this script is running data will be published to the (configured) MQTT broker topic "`dvc-{hostname}/...`" (e.g. `dvc-picam01/...`).
 
 
 **NOTE:** Where there's an IP address that interface is connected.
