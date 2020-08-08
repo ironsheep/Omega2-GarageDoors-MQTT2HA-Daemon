@@ -22,6 +22,8 @@ from configparser import ConfigParser
 from unidecode import unidecode
 import paho.mqtt.client as mqtt
 from signal import signal, SIGPIPE, SIG_DFL
+# and for our Omega2+ hardware
+from OmegaExpansion import relayExp
 
 signal(SIGPIPE,SIG_DFL)
 
@@ -210,27 +212,38 @@ dvc_mqtt_script = script_info
 dvc_firmware_version = ''
 
 
+# Door Commands
+cmd_open_val = 'OPEN'
+cmd_close_val = 'CLOSE'
+cmd_stop_val = 'STOP'
 
+# Door State Indications
 door_open_val = 'open'
 door_opening_val = 'opening'
 door_closed_val = 'closed'
 door_closing_val = 'closing'
 
-cmd_open_val = 'OPEN'
-cmd_close_val = 'CLOSE'
-cmd_stop_val = 'STOP'
+dvc_door_left_state_indication = door_closed_val    # state: closed --> opening -> open -> closing...
+dvc_door_right_state_indication = door_closed_val   # state: closed --> opening -> open -> closing...
 
-dvc_door_left_state = door_closed_val    # state: closed --> opening -> open -> closing...
-dvc_door_right_state = door_closed_val   # state: closed --> opening -> open -> closing...
+
+# Door STATEs
+state_closed = 'closed'
+state_opening = 'opening'
+state_open = 'open'
+state_closing = 'closing'
+state_stopped_opening = 'stopped opening'
+state_closing_to_open = 'closing to open'
+state_stopped_closing = 'stopped closing'
+state_opening_to_close = 'opening to close'
+
+dvc_door_left_state = state_closed
+dvc_door_right_state = state_closed 
+
+dvc_door_left_stop_requested = False
+dvc_door_right_stop_requested = False
 
 def handleDoorRequest(desired_door, command):
-    global door_open_val
-    global door_opening_val
-    global door_closed_val
-    global door_closing_val
-    global cmd_open_val
-    global cmd_close_val
-    global cmd_stop_val
     print_line("* handleDoorRequest({}, {})".format(desired_door, command), verbose=True)
 
     # setup our current state
@@ -238,50 +251,132 @@ def handleDoorRequest(desired_door, command):
     desired_state = command.lower()
     # if we are not at desired state, then we've something to do
     if initial_door_state != desired_state:
-        if command == cmd_stop_val and initial_door_state != door_opening_val and initial_door_state != door_closing_val:
+        if command == cmd_stop_val and isDoorStopped(desired_door):
             print_line('* door [{}] [{}] requested, but already STOPPED, Skipping...'.format(desired_door, command), debug=True)
         else:
             print_line('* door [{}] moving to [{}]'.format(desired_door, command), debug=True)
             needTimeout = False
-            isStopped = False
+            needDoubleTap = False
             validCommand = True
             if command == cmd_open_val:
-                next_state = door_opening_val
-                end_state = door_open_val
-                needTimeout = True
+                if initial_door_state == state_closed or initial_door_state == state_stopped_opening or initial_door_state == state_stopped_closing:
+                    # do simple open -OR- stopped but reverse to continue our open -OR- stopped simply continue to do close
+                    next_state_ind = door_opening_val
+                    next_state = state_opening
+                    end_state_ind = door_open_val
+                    end_state = state_open
+                    if initial_door_state == state_stopped_opening:
+                        needDoubleTap = True
+                    else:
+                        needTimeout = True
+
             elif command == cmd_close_val:
-                next_state = door_closing_val
-                end_state = door_closed_val
-                needTimeout = True
+                if initial_door_state == state_open or initial_door_state == state_stopped_closing or initial_door_state == state_stopped_opening:
+                    # do simple close -OR- stopped but reverse to continue our close -OR- stopped simply continue to do close
+                    next_state_ind = door_closing_val
+                    next_state = state_closing
+                    end_state_ind = door_closed_val
+                    end_state = state_closed
+                    if initial_door_state == state_stopped_closing:
+                        needDoubleTap = True
+                    else:
+                        needTimeout = True
+                    
             elif command == cmd_stop_val:
-                if initial_door_state != door_open_val and initial_door_state != door_closed_val:
+                if initial_door_state == state_opening or initial_door_state == state_closing:
                     # let's handle stop when door moving
-                    isStopped = True
-                    # this should stop our timer and pause the door movent 
-                    #   (preventing the end change that would have happened)
+                    #    this should stop our timer and pause the door movent 
+                    #    (preventing the end change that would have happened)
+                    setStopRequestedForDoor(desired_door, True)
+                    if initial_door_state == state_opening:
+                        next_state_ind = door_opening_val
+                        next_state = state_opening
+                        end_state_ind = door_opening_val
+                        end_state = state_stopped_opening
+                    else:
+                        next_state_ind = door_closing_val
+                        next_state = state_closing
+                        end_state_ind = door_closing_val
+                        end_state = state_stopped_closing
+                    needTimeout = True
+                   
+                else:
+                    # HUH, what is this command?
+                    validCommand = False 
+                    print_line('* door [{}] is [{}] but STOP command [{}] here????, IGNORED.'.format(desired_door, initial_door_state, command), error=True)
             else:
                 # HUH, what is this command?
                 validCommand = False 
                 print_line('* door [{}] but INVALID command [{}], aborted.'.format(desired_door, command), error=True)
 
             if validCommand:
-                #  FIXME undone let's add code to handle stop
+                # record our intermediate state
+                setNewDoorState(desired_door, next_state, next_state_ind)
+                sendDoorValueChange(desired_door)
 
-                if isStopped == False:
-                    # record our intermediate state
-                    setNewDoorState(desired_door, next_state)
-                    sendDoorValueChange(desired_door)
+                if needTimeout == True:
+                    # pop relay
+                    pulseRelayForDoor(desired_door)
+                    # delay for 12 seconds
+                    sleep(12.5)
 
-                    if needTimeout:
-                        # delay for 12 seconds
-                        sleep(12.5)
+                elif needDoubleTap == True:
+                    # reverse our door direction by hitting relay twice
+                    reverseTravelForDoor(desired_door)
 
+                if isStopRequestedForDoor(desired_door) == False:
                     # record our end state
-                    setNewDoorState(desired_door, end_state)
+                    setNewDoorState(desired_door, end_state, end_state_ind)
                     sendDoorValueChange(desired_door)
+                else:
+                    # clear our stop requested flag...
+                    setStopRequestedForDoor(desired_door, False)
 
     else:
         print_line('* door [{}] already [{}], nothing to do.'.format(desired_door, command), debug=True)
+
+def pulseRelayForDoor(desired_door):
+    # set relay to ON
+    setRelayforDoor(desired_door, 1)
+        # delay for 0.5 second
+    sleep(0.5)
+    # set relay to ON
+    setRelayforDoor(desired_door, 0)
+
+def reverseTravelForDoor(desired_door):
+    # start door moving in opposite direction
+    pulseRelayForDoor(desired_door)
+    # delay for 1 second
+    sleep(1)
+    # stop the door
+    pulseRelayForDoor(desired_door)
+    # delay for 1 second, again
+    sleep(1)
+    # now start door in direction we need
+    pulseRelayForDoor(desired_door)
+
+def setStopRequestedForDoor(desired_door, stopValue):
+    global dvc_door_left_stop_requested
+    global dvc_door_right_stop_requested
+    # capture prior value
+    priorValue = dvc_door_right_stop_requested
+    if desired_door == door_name_left:
+            priorValue = dvc_door_left_stop_requested
+    # set new value
+    if desired_door == door_name_left:
+        dvc_door_left_stop_requested = stopValue
+    else:
+        dvc_door_right_stop_requested = stopValue
+    if priorValue != stopValue:
+        print_line('* door STOP-REQ [{}]: [{}] -> [{}]'.format(desired_door, priorValue, stopValue), debug=True)
+    else:
+        print_line('* door STOP-REQ [{}]: [{}]'.format(desired_door, stopValue), debug=True)
+
+def isStopRequestedForDoor(desired_door):
+    stopReqeustedValue = dvc_door_right_stop_requested
+    if desired_door == door_name_left:
+        stopReqeustedValue = dvc_door_left_stop_requested
+    return stopReqeustedValue
 
 def sendDoorValueChange(desired_door):
     current_timestamp = datetime.now(local_tz)
@@ -292,27 +387,81 @@ def sendDoorValueChange(desired_door):
 
 def getDoorState(desired_door):
     # capture prior
-    global dvc_door_right_state
-    global dvc_door_left_state
     desired_state = dvc_door_right_state
     if desired_door == door_name_left:
         desired_state = dvc_door_left_state
     return desired_state
 
-def setNewDoorState(desired_door, new_state):
+def isDoorStopped(desired_door):
+    # capture current
+    door_state = getDoorState(desired_door)
+    stoppedIndication = False
+    if door_state == state_stopped_opening or door_state == state_stopped_closing:
+        stoppedIndication = True
+    return stoppedIndication
+
+def setNewDoorState(desired_door, new_state, new_state_ind):
     # capture prior
-    global dvc_door_right_state
+    global dvc_door_right_state_indication
+    global dvc_door_left_state_indication
     global dvc_door_left_state
+    global dvc_door_right_state
+    prior_state_ind = dvc_door_right_state_indication
     prior_state = dvc_door_right_state
     if desired_door == door_name_left:
+        prior_state_ind = dvc_door_left_state_indication
         prior_state = dvc_door_left_state
     # set new
     if desired_door == door_name_left:
+        dvc_door_left_state_indication = new_state_ind
         dvc_door_left_state = new_state
     else:
+        dvc_door_right_state_indication = new_state_ind
         dvc_door_right_state = new_state
     # report
-    print_line('* door [{}]: [{}] -> [{}]'.format(desired_door, prior_state, new_state), debug=True)
+    if prior_state != new_state:
+        print_line('* door STATE [{}]: [{}] -> [{}]'.format(desired_door, prior_state, new_state), debug=True)
+    if prior_state_ind != new_state_ind:
+        print_line('* door-ind [{}]: [{}] -> [{}]'.format(desired_door, prior_state_ind, new_state_ind), debug=True)
+
+# -----------------------------------------------------------------------------
+#  Relay handling code
+#
+# our relay is at addr 0 (all 3 switches to zero)
+relay_sw_addr = 7
+
+relay_left = 0
+relay_right = 1
+relay_off = 0
+relay_on = 1
+
+def relayBoardInit():
+    status  = relayExp.driverInit(relay_sw_addr)
+    errorValue = True
+    if status == 0:
+        errorValue = False
+    print_line('* relay driver init=[{}]'.format(status), debug=True, error=errorValue)
+
+    bInit   = relayExp.checkInit(relay_sw_addr)
+    errorValue = True
+    if bInit != 0:
+        errorValue = False
+    print_line('* relay driver checkInit=[{}]'.format(status), debug=True, error=errorValue)
+    
+    # force all relays to off
+    relayExp.setAllChannels(relay_sw_addr, relay_off)
+
+def setRelayforDoor(desired_door, new_state):
+    desired_relay = relay_right
+    if desired_door == door_name_left:
+        desired_relay = relay_left
+    if new_state == 0 or new_state == 1:
+        status  = relayExp.setChannel(relay_sw_addr, desired_relay, new_state)
+        errorValue = True
+        if status == 0:
+            errorValue = False
+        print_line('* relay [{}] set to=[{}], status=[{}]'.format(desired_relay, new_state, status), debug=True, error=errorValue)
+
 
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
@@ -796,14 +945,14 @@ def send_status(timestamp, nothing):
     _thread.start_new_thread(publishMonitorData, (omegaTopDict, state_topic_right))
 
 def send_door_status(timestamp, topic):
-    global dvc_door_right_state
-    global dvc_door_left_state
+    global dvc_door_right_state_indication
+    global dvc_door_left_state_indication
     omegaData = OrderedDict()
 
     if door_name_left in topic:
-        state_value =  dvc_door_left_state
+        state_value =  dvc_door_left_state_indication
     else:
-        state_value =  dvc_door_right_state
+        state_value =  dvc_door_right_state_indication
 
     omegaData[DOOR_STATE] = state_value
     omegaData[SCRIPT_TIMESTAMP] = timestamp.astimezone().replace(microsecond=0).isoformat()
@@ -893,12 +1042,12 @@ def afterMQTTConnect():
     handle_interrupt(0)
 
 # TESTING AGAIN
-#getNetworkIFs()
-#getLastUpdateDate()
+
 
 # TESTING, early abort
-#stopAliveTimer()
-#exit(0)
+
+
+relayBoardInit()    # set up our relay expansion
 
 afterMQTTConnect()  # now instead of after?
 
