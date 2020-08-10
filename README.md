@@ -161,13 +161,13 @@ Set up the script to be run as a Sys V init script as follows:
    ln -s /opt/Omega2-GarageDoors-MQTT2HA-Daemon/gardoors-daemon /etc/init.d/gardoors-daemon
 
 	# configure system to start this script at boot time
-   update-rc.d gardoors-daemon defaults
+   /etc/init.d/gardoors-daemon enable
 
    # let's start the script now, too so we don't have to reboot
    /etc/init.d/gardoors-daemon start
   
    # check to make sure all is ok with the start up
-   /etc/init.d/gardoors-daemon status
+   /etc/init.d/gardoors-daemon status  # look for "Running" vs. "NOT Running"
    ```
 
 ### Update to latest
@@ -191,7 +191,10 @@ Now You can update to the latest by following these steps:
 
    ```shell
    # stop the service
-   sudo /etc/init.d/gardoors-daemon stop
+   /etc/init.d/gardoors-daemon stop
+   
+   # disable it in-case we change the Start/Stop numbers
+   /etc/init.d/gardoors-daemon disable
    
    # move to installed options directory
    cd /opt
@@ -206,12 +209,15 @@ Now You can update to the latest by following these steps:
    # this installed our updated files in /opt/Omega2-GarageDoors-MQTT2HA-Daemon, go there
    cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
    # (this makes sure our new files arrived in desired location)
-
+   
+   # re-enable the service
+   /etc/init.d/gardoors-daemon enable
+   
    # restart the service with your new version
-   sudo /etc/init.d/gardoors-daemon start
+   /etc/init.d/gardoors-daemon start
 
    # check status of the running script
-   sudo /etc/init.d/gardoors-daemon status
+   /etc/init.d/gardoors-daemon status  # look for "Running" vs. "NOT Running"
    
    # if the status looks good then remove the older isntall directory
    rm -rf /opt/Omega2-GarageDoors-MQTT2HA-Daemon-old
