@@ -153,13 +153,23 @@ print_line('Configuration accepted', console=False)
 # -----------------------------------------------------------------------------
 
 # Eclipse Paho callbacks - http://www.eclipse.org/paho/clients/python/docs/#callbacks
+
+mqtt_client_connected = False
+print_line('* init mqtt_client_connected=[{}]'.format(mqtt_client_connected), debug=True)
+mqtt_client_should_attempt_reconnect = True
+
 def on_connect(client, userdata, flags, rc):
+    global mqtt_client_connected
     if rc == 0:
         print_line('* MQTT connection established', console=True)
         print_line('', console=True)  # blank line?!
         #_thread.start_new_thread(afterMQTTConnect, ())
+        mqtt_client_connected = True
+        print_line('on_connect() mqtt_client_connected=[{}]'.format(mqtt_client_connected), debug=True)
     else:
         print_line('! Connection error with result code {} - {}'.format(str(rc), mqtt.connack_string(rc)), error=True)
+        qtt_client_connected = False   # technically NOT useful but readying possible new shape...
+        print_line('on_connect() mqtt_client_connected=[{}]'.format(mqtt_client_connected), debug=True, error=True)
         #kill main thread
         os._exit(1)
 
@@ -775,7 +785,10 @@ else:
     mqtt_client.publish(lwt_topic, payload=lwt_online_val, retain=False)
     mqtt_client.loop_start()
 
-    sleep(1.0) # some slack to establish the connection
+    while mqtt_client_connected == False: #wait in loop
+        print_line('* Wait on mqtt_client_connected=[{}]'.format(mqtt_client_connected), debug=True)
+        sleep(1.0) # some slack to establish the connection
+
     startAliveTimer()
 
 
@@ -787,7 +800,7 @@ mac_basic = dvc_mac_raw.lower().replace(":", "")
 mac_left = mac_basic[:6]
 mac_right = mac_basic[6:]
 print_line('mac lt=[{}], rt=[{}], mac=[{}]'.format(mac_left, mac_right, mac_basic), debug=True)
-uniqID = "Omega2-{}{}".format(mac_left, mac_right)
+uniqID = "Omega2-{}gar{}".format(mac_left, mac_right)
 
 # our Omega2 Reporter device
 LD_DOOR_LEFT = "garage_door_lt"
@@ -859,7 +872,7 @@ for [sensor, params] in detectorValues.items():
                 'manufacturer' : 'Onion Corporation',
                 'name' : params['device_ident'],
                 'model' : '{}'.format(dvc_model),
-                'sw_version': "{}".format(dvc_firmware_version)
+                'sw_version': "v{}".format(dvc_firmware_version)
         }
     else:
          payload['dev'] = {

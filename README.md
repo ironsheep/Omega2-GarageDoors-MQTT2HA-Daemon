@@ -74,7 +74,7 @@ The following example shows the installation below the `/opt` directory:
 
 ```shell
 # make sure we have python3 installed
-opkg install python3 python3-pip
+opkg install python3 python3-pip pyRelayExp
 
 # go to home directory
 cd
@@ -96,7 +96,7 @@ tar -xzvf /root/{filename}.tar.gz
 cd /opt/Omega2-GarageDoors-MQTT2HA-Daemon
 
 # and install our extra python support
-sudo pip3 install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ## Configuration

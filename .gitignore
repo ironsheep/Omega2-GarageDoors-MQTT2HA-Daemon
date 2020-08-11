@@ -11,6 +11,7 @@ __pycache__/
 
 # ignore random list files
 *.lst
+rc.common
 
 # ignore my config file
 config*.ini
