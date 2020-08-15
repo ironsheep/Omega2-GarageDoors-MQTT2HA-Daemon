@@ -489,7 +489,7 @@ def getDeviceModel():
     # now reduce string length (just more compact, same info)
     lineParts = dvc_model_raw.split(':')
     if len(lineParts) > 1:
-        dvc_model = lineParts[1]
+        dvc_model = lineParts[1].lstrip().rstrip()
     else:
         dvc_model = ''
 
@@ -499,21 +499,6 @@ def getDeviceModel():
     print_line('dvc_model_raw=[{}]'.format(dvc_model_raw), debug=True)
     print_line('dvc_model=[{}]'.format(dvc_model), debug=True)
     print_line('dvc_connections=[{}]'.format(dvc_connections), debug=True)
-
-def getLinuxRelease():
-    global dvc_linux_release
-    dvc_linux_release = 'openWrt'
-    print_line('dvc_linux_release=[{}]'.format(dvc_linux_release), debug=True)
-
-def getLinuxVersion():
-    global dvc_linux_version
-    out = subprocess.Popen("/bin/uname -r",
-           shell=True,
-           stdout=subprocess.PIPE,
-           stderr=subprocess.STDOUT)
-    stdout,_ = out.communicate()
-    dvc_linux_version = stdout.decode('utf-8').rstrip()
-    print_line('dvc_linux_version=[{}]'.format(dvc_linux_version), debug=True)
 
 def getFirmwareVersion():
     global dvc_firmware_version
@@ -526,16 +511,6 @@ def getFirmwareVersion():
     lineParts = fw_version_raw.split(':')
     dvc_firmware_version = lineParts[1].lstrip()
     print_line('dvc_firmware_version=[{}]'.format(dvc_firmware_version), debug=True)
-
-def getProcessorType():
-    global dvc_processor_family
-    out = subprocess.Popen("/bin/uname -m",
-           shell=True,
-           stdout=subprocess.PIPE,
-           stderr=subprocess.STDOUT)
-    stdout,_ = out.communicate()
-    dvc_processor_family = stdout.decode('utf-8').rstrip()
-    print_line('dvc_processor_family=[{}]'.format(dvc_processor_family), debug=True)
 
 def getHostnames():
     global dvc_hostname
@@ -624,10 +599,12 @@ def getNetworkIFs():    # RERUN in loop
                 tmpInterfaces.append(newTuple)
                 #print_line('newTuple=[{}]'.format(newTuple), debug=True)
             elif haveIF == True:
-                print_line('IF=[{}], lineParts=[{}]'.format(imterfc, lineParts), debug=True)
+                #print_line('IF=[{}], lineParts=[{}]'.format(imterfc, lineParts), debug=True)
                 if 'ether' in currLine: # NEWER ONLY
                     newTuple = (imterfc, 'mac', lineParts[1])
                     tmpInterfaces.append(newTuple)
+                    if dvc_mac_raw == '':
+                        dvc_mac_raw = lineParts[1]
                     #print_line('newTuple=[{}]'.format(newTuple), debug=True)
                 elif 'inet' in currLine:  # OLDER & NEWER
                     newTuple = (imterfc, 'IP', lineParts[1].replace('addr:',''))
@@ -637,59 +614,12 @@ def getNetworkIFs():    # RERUN in loop
     dvc_interfaces = tmpInterfaces
     print_line('dvc_interfaces=[{}]'.format(dvc_interfaces), debug=True)
 
-def getFileSystemSpace():    # RERUN in loop
-    global dvc_filesystem_space_raw
-    global dvc_filesystem_space
-    global dvc_filesystem_percent
-    out = subprocess.Popen("/bin/df -m | /bin/grep root",
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT)
-    stdout,_ = out.communicate()
-    dvc_filesystem_space_raw = stdout.decode('utf-8').rstrip()
-    print_line('dvc_filesystem_space_raw=[{}]'.format(dvc_filesystem_space_raw), debug=True)
-    lineParts = dvc_filesystem_space_raw.split()
-    print_line('lineParts=[{}]'.format(lineParts), debug=True)
-    filesystem_1GBlocks = int(lineParts[1],10) / 1024
-    if filesystem_1GBlocks > 32:
-        dvc_filesystem_space = '64GB'
-    elif filesystem_1GBlocks > 16:
-        dvc_filesystem_space = '32GB'
-    elif filesystem_1GBlocks > 8:
-        dvc_filesystem_space = '16GB'
-    elif filesystem_1GBlocks > 4:
-        dvc_filesystem_space = '8GB'
-    elif filesystem_1GBlocks > 2:
-        dvc_filesystem_space = '4GB'
-    elif filesystem_1GBlocks > 1:
-        dvc_filesystem_space = '2GB'
-    else:
-        dvc_filesystem_space = '1GB'
-    print_line('dvc_filesystem_space=[{}]'.format(dvc_filesystem_space), debug=True)
-    dvc_filesystem_percent = lineParts[4].replace('%', '')
-    print_line('dvc_filesystem_percent=[{}]'.format(dvc_filesystem_percent), debug=True)
-
-def getLastUpdateDate():    # RERUN in loop
-    global dvc_last_update_date
-    apt_log_filespec = '/var/opkg-lists/omega2_base.sig'
-    try:
-        mtime = os.path.getmtime(apt_log_filespec)
-    except OSError:
-        mtime = 0
-    last_modified_date = datetime.fromtimestamp(mtime, tz=local_tz)
-    dvc_last_update_date  = last_modified_date
-    print_line('dvc_last_update_date=[{}]'.format(dvc_last_update_date), debug=True)
-
 # get model so we can use it too in MQTT
 getDeviceModel()
 getFirmwareVersion()
 # get our hostnames so we can setup MQTT
 getHostnames()
-getLastUpdateDate()
-getLinuxRelease()
-getLinuxVersion()
 getNetworkIFs()
-getProcessorType()
 
 # -----------------------------------------------------------------------------
 #  timer and timer funcs for ALIVE MQTT Notices handling
@@ -818,7 +748,7 @@ LDS_PAYLOAD_NAME = "info"
 #  table of key items to publish:
 detectorValues = OrderedDict([
     (LD_DOOR_LEFT, dict(title="GarageDr Left", subtopic=door_name_left, sensor_type="cover", commandable="yes", device_class='garage', no_title_prefix="yes", device_ident='Garage Door Controller')),
-    (LD_DOOR_RIGHT, dict(title="GarageDr Right", subtopic=door_name_right, sensor_type="cover", ommandable="yes", device_class='garage', no_title_prefix="yes")),
+    (LD_DOOR_RIGHT, dict(title="GarageDr Right", subtopic=door_name_right, sensor_type="cover", commandable="yes", device_class='garage', no_title_prefix="yes")),
 ])
 
 print_line('Announcing Omega2 Garage Door device to MQTT broker for auto-discovery ...')
@@ -880,7 +810,7 @@ for [sensor, params] in detectorValues.items():
             'manufacturer' : 'Onion Corporation',
             'name' : params['device_ident'],
             'model' : '{}'.format(dvc_model),
-            'sw_version': "v{}".format(dvc_firmware_version)
+            'sw_version': "v{}".format(dvc_firmware_version),
         }
     else:
          payload['dev'] = {
@@ -1019,15 +949,6 @@ def publishDoorValues(latestData, topic):
     mqtt_client.publish('{}'.format(topic), json.dumps(latestData), 1, retain=False)
     sleep(0.5) # some slack for the publish roundtrip and callback function
 
-def update_values():
-    # nothing here yet
-    getUptime()
-    #getFileSystemSpace()
-    getLastUpdateDate()
-    getNetworkIFs()
-
-
-
 # -----------------------------------------------------------------------------
 
 # Interrupt handler
@@ -1038,7 +959,6 @@ def handle_interrupt(channel):
     print_line(sourceID + " >> Time to report! (%s)" % current_timestamp.strftime('%H:%M:%S - %Y/%m/%d'), verbose=True)
     # ----------------------------------
     # have PERIOD interrupt!
-    update_values()
 
     if (opt_stall == False or reported_first_time == False and opt_stall == True):
         # ok, report our new detection to MQTT
@@ -1061,11 +981,6 @@ def afterMQTTConnect():
     startPeriodTimer()
     # do our first report
     handle_interrupt(0)
-
-# TESTING AGAIN
-
-
-# TESTING, early abort
 
 
 relayBoardInit()    # set up our relay expansion
