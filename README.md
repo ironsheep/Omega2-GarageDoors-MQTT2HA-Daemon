@@ -66,7 +66,7 @@ MQTT is huge help in connecting different parts of your smart home and setting u
 
 ## Installation
 
-On a OpenWrt just a few steps are needed to get the daemon working.
+On OpenWrt just a few steps are needed to get the daemon working.
 
 To begin installation we need to find the latest released version of this script. Visit our [releases page](https://github.com/ironsheep/Omega2-GarageDoors-MQTT2HA-Daemon/releases) to find the latest release. Copy the Link Address of the file you want to use for install (.zip or .tar.gz file)
 
@@ -74,7 +74,7 @@ The following example shows the installation below the `/opt` directory:
 
 ```shell
 # make sure we have python3 installed
-opkg install python3 python3-pip pyRelayExp
+opkg install python3 python3-pip python3-relay-exp
 
 # go to home directory
 cd
